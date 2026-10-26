@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: buildconnect
+      POSTGRES_PASSWORD: buildconnect
+      POSTGRES_DB: buildconnect
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buildconnect"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://buildconnect:buildconnect@db:5432/buildconnect
+    ports: ["4000:4000"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  frontend:
+    build: ./frontend
+    ports: ["5173:80"]
+    depends_on: [backend]
+
+  scraper:
+    build: ./scraper
+    env_file: .env
+    environment:
+      BC_API_URL: http://backend:4000/api
+    depends_on: [backend]
+    profiles: [scrape]
+
+volumes:
+  pgdata:
