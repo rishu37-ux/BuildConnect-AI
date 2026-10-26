@@ -51,6 +51,10 @@ export const api = {
   updateLead: (id, patch) => request(`/leads/${id}`, { method: 'PATCH', body: patch }),
   deleteLead: (id) => request(`/leads/${id}`, { method: 'DELETE' }),
   users: () => request('/users'),
+  campaigns: () => request('/campaigns'),
+  createCampaign: (body) => request('/campaigns', { method: 'POST', body }),
+  cancelCampaign: (id) => request(`/campaigns/${id}/cancel`, { method: 'POST' }),
+  campaignSources: (id) => request(`/campaigns/${id}/sources`),
   suppress: (value, reason) => request('/suppression', { method: 'POST', body: { value, reason } }),
 
   async exportCsv(filters) {

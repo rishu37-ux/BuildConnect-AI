@@ -69,6 +69,7 @@ async def test_agent_crawls_follows_pagination_and_respects_robots(settings):
       <a href="/list?page=2">Next</a> <a href="/private/admin">Admin</a>
       <a href="https://facebook.com/x">FB</a> <a href="https://other.example/">Other site</a></body></html>"""
     page2 = """<html><head><title>Structural engineers in Shimla - page 2</title></head><body>
+      <div><h4>Er. Rakesh Thakur</h4><p>Structural consultant, Shimla. 94180 00001, rakesh@thakur-struct.in</p></div>
       <div><h4>Er. Anjali Verma</h4><p>Structural engineer, Solan. anjali@verma-struct.in</p></div>
       <div><h4>Er. Mohit Rana</h4><p>Structural engineer, Pune. 99999 88888</p></div></body></html>"""
     hits: list[str] = []
@@ -80,7 +81,9 @@ async def test_agent_crawls_follows_pagination_and_respects_robots(settings):
     summary = await LeadAgent(ScrapeGoal(max_pages=10), settings, sink, fetcher).run(["https://dir.example.in/list"])
 
     names = sorted(lead.full_name for lead in sink.leads)
-    assert names == ["Er. Anjali Verma", "Er. Rakesh Thakur"]  # Pune lead filtered out by state
+    # Pune lead filtered out by state; Rakesh is sent again with his newly found email (for merging)
+    assert names == ["Er. Anjali Verma", "Er. Rakesh Thakur", "Er. Rakesh Thakur"]
+    assert sink.leads[-1].email == "rakesh@thakur-struct.in" or sink.leads[-2].email == "rakesh@thakur-struct.in"
     assert "dir.example.in/private/admin" not in hits
     assert not any("other.example" in h or "facebook" in h for h in hits)
     assert summary["pages_fetched"] == 2 and summary["leads_found"] == 2

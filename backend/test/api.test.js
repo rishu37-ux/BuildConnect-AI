@@ -122,6 +122,50 @@ describe('API', { skip: !dbUrl && 'TEST_DATABASE_URL not set' }, () => {
     assert.equal((await request(app).post('/api/suppression').set(auth('sales')).send({ value: 'a@b.com' })).status, 403);
   });
 
+  test('campaign lifecycle: create, claim, sources, progress, cancel', async () => {
+    const body = { name: 'Ludhiana architects', professions: ['architect'], states: ['punjab'], cities: ['Ludhiana'] };
+    assert.equal((await request(app).post('/api/campaigns').set(auth('sales')).send(body)).status, 403);
+    const created = await request(app).post('/api/campaigns').set(auth('manager')).send(body);
+    assert.equal(created.status, 201);
+    assert.equal(created.body.status, 'queued');
+    const id = created.body.id;
+
+    const key = { 'x-api-key': INGEST_KEY };
+    const claim = await request(app).post('/api/ingest/campaigns/claim').set(key).send({ worker_id: 'w1' });
+    assert.equal(claim.body.id, id);
+    assert.equal(claim.body.status, 'running');
+    assert.deepEqual(claim.body.professions, ['architect']); // a real array, not '{architect}'
+    assert.equal((await request(app).post('/api/ingest/campaigns/claim').set(key).send({ worker_id: 'w2' })).status, 204);
+
+    const reg = await request(app).post(`/api/ingest/campaigns/${id}/sources`).set(key).send({
+      sources: [{ url: 'https://www.firm-a.in/contact', title: 'Firm A', query: 'architects in Ludhiana' },
+        { url: 'https://firm-b.in/', query: 'architects in Ludhiana' }],
+    });
+    assert.deepEqual(reg.body.map((s) => [s.domain, s.status]), [['firm-a.in', 'queued'], ['firm-b.in', 'queued']]);
+    const done = await request(app).patch(`/api/ingest/sources/${reg.body[0].id}`).set(key)
+      .send({ status: 'done', pages_crawled: 4, leads_found: 3 });
+    assert.equal(done.body.leads_found, 3);
+
+    // Recently crawled sites are skipped by the next campaign.
+    const again = await request(app).post(`/api/ingest/campaigns/${id}/sources`).set(key)
+      .send({ sources: [{ url: 'https://firm-a.in/team' }] });
+    assert.equal(again.body[0].status, 'skipped');
+
+    const hb = await request(app).patch(`/api/ingest/campaigns/${id}`).set(key).send({ progress: { leads_found: 3 } });
+    assert.equal(hb.body.status, 'running');
+
+    const list = await request(app).get('/api/campaigns').set(auth('manager'));
+    assert.equal(list.body[0].progress.leads_found, 3);
+    assert.equal(list.body[0].source_count, 2);
+    const sources = await request(app).get(`/api/campaigns/${id}/sources`).set(auth('manager'));
+    assert.equal(sources.body[0].domain, 'firm-a.in');
+
+    assert.equal((await request(app).post(`/api/campaigns/${id}/cancel`).set(auth('manager'))).status, 200);
+    const afterCancel = await request(app).patch(`/api/ingest/campaigns/${id}`).set(key).send({ status: 'completed' });
+    assert.equal(afterCancel.body.status, 'cancelled'); // worker sees the cancellation, can't overwrite it
+    assert.equal((await request(app).post(`/api/campaigns/${id}/cancel`).set(auth('manager'))).status, 409);
+  });
+
   test('only admins manage users', async () => {
     const body = { email: 'new@test.local', full_name: 'New', password: 'long-password-1', role: 'sales' };
     assert.equal((await request(app).post('/api/users').set(auth('manager')).send(body)).status, 403);

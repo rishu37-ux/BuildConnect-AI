@@ -17,6 +17,7 @@ outreach process before going live.
 | **Identifiable bot** | `BC_USER_AGENT` should name your company and a contact URL/email. |
 | **Proxy rotation** | Used for *reliability* only: failing egress proxies are put on exponential cooldown and traffic moves to healthy ones. |
 | **CAPTCHAs / bot walls** | **Not solved or bypassed.** A challenge, `401/403/451`, or CAPTCHA wall stops crawling of that domain for the run, and it is reported under `blocked_domains` in the run summary. A site that challenges bots has said it doesn't consent to automated collection; use its API, ask for a data-sharing agreement, or review it manually. |
+| **Discovery** | Uses official search APIs (Brave/SerpAPI), not scraping of search-engine pages. Aggregators and marketplaces (Justdial, IndiaMART, Sulekha…), social networks, news and government sites are excluded, so agents only visit firms' own websites. |
 | **Scope** | The crawl stays on the seed domains, and only leads matching the target professions and states (and a confidence threshold) are kept. |
 | **Provenance** | Every lead stores `source_url`, `source_domain`, `scrape_run_id`, `first_seen_at` and `last_seen_at`. |
 

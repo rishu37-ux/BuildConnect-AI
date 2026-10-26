@@ -9,9 +9,9 @@ import { HttpError } from './errors.js';
  */
 export const PERMISSIONS = {
   admin: ['leads:read', 'leads:write', 'leads:delete', 'leads:export', 'leads:assign',
-    'users:manage', 'suppression:manage', 'runs:read', 'audit:read'],
+    'users:manage', 'suppression:manage', 'runs:read', 'campaigns:manage', 'audit:read'],
   manager: ['leads:read', 'leads:write', 'leads:export', 'leads:assign',
-    'suppression:manage', 'runs:read'],
+    'suppression:manage', 'runs:read', 'campaigns:manage'],
   sales: ['leads:read', 'leads:write:own'],
   viewer: ['leads:read'],
 };

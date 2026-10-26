@@ -26,6 +26,17 @@ services:
     ports: ["5173:80"]
     depends_on: [backend]
 
+  # Always-on agent worker: picks up campaigns started from the dashboard.
+  worker:
+    build: ./scraper
+    env_file: .env
+    environment:
+      BC_API_URL: http://backend:4000/api
+    command: ["worker"]
+    restart: unless-stopped
+    depends_on: [backend]
+
+  # One-off manual crawls: docker compose run --rm scraper --seed https://...
   scraper:
     build: ./scraper
     env_file: .env

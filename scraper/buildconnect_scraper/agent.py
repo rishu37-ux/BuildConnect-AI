@@ -88,6 +88,7 @@ class LeadAgent:
         self._productive_paths: Counter[str] = Counter()
         self.pages_fetched = 0
         self.leads_found = 0
+        self._stopped = False
         self.errors: Counter[str] = Counter()
 
         self._goal_terms = [t for p in goal.professions for t in _PROFESSION_TERMS.get(p, [])]
@@ -173,11 +174,17 @@ class LeadAgent:
         leads, ctx = extract_leads(page.html, page.url)
         accepted = 0
         for lead in leads:
-            if not self.accept(lead) or lead.key() in self._seen_leads:
+            if not self.accept(lead):
                 continue
-            self._seen_leads.add(lead.key())
+            contacts = {c for c in (lead.phone, lead.email) if c}
+            if contacts <= self._seen_leads:
+                continue
+            # A known person with a new phone/email still goes to the sink so the
+            # backend can merge the extra detail, but isn't counted as a new lead.
+            if not contacts & self._seen_leads:
+                accepted += 1
+            self._seen_leads |= contacts
             await self.sink.add(lead)
-            accepted += 1
         if accepted:
             stats.leads += accepted
             self.leads_found += accepted
@@ -189,17 +196,20 @@ class LeadAgent:
             if score is not None:
                 self._enqueue(url, task.depth + 1, score)
 
-    async def run(self, seeds: list[str]) -> dict:
+    async def crawl(self, seeds: list[str]) -> dict:
+        """Crawl from `seeds` until the frontier or page budget is exhausted.
+
+        Doesn't open/close the sink or the fetcher, so several agents can share them.
+        """
         if self.allowed_domains is None:
             self.allowed_domains = {urlsplit(s).netloc.lower() for s in seeds}
         for seed in seeds:
             self._enqueue(seed, 0, 100.0)
 
-        await self.sink.start(self.name, {**self.goal.describe(), "seeds": seeds})
         in_flight: set[asyncio.Task] = set()
         try:
             while (self._frontier or in_flight) and self.pages_fetched + len(in_flight) < self.goal.max_pages:
-                while self._frontier and len(in_flight) < self.settings.concurrency \
+                while self._frontier and not self._stopped and len(in_flight) < self.settings.concurrency \
                         and self.pages_fetched + len(in_flight) < self.goal.max_pages:
                     task = heapq.heappop(self._frontier)
                     in_flight.add(asyncio.create_task(self._process(task)))
@@ -209,14 +219,31 @@ class LeadAgent:
                 for t in done:
                     if t.exception():
                         self.errors["internal"] += 1
-                        log.exception("task failed", exc_info=t.exception())
-            if in_flight:
-                await asyncio.gather(*in_flight, return_exceptions=True)
+                        log.error("task failed", exc_info=t.exception())
+        finally:
+            for t in in_flight:
+                t.cancel()
+            await asyncio.gather(*in_flight, return_exceptions=True)
+        return self.summary()
+
+    async def run(self, seeds: list[str]) -> dict:
+        """Standalone run: owns the sink lifecycle and closes the fetcher at the end."""
+        await self.sink.start(self.name, {**self.goal.describe(), "seeds": seeds})
+        try:
+            await self.crawl(seeds)
         finally:
             summary = self.summary()
             await self.sink.finish(self.pages_fetched, self.leads_found, summary)
             await self.fetcher.aclose()
         return summary
+
+    def stop(self) -> None:
+        """Finish in-flight pages, then stop (used for campaign cancellation)."""
+        self._stopped = True
+
+    @property
+    def blocked_reason(self) -> str | None:
+        return next((s.blocked for s in self._domains.values() if s.blocked), None)
 
     def summary(self) -> dict:
         return {

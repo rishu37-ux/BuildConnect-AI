@@ -4,6 +4,7 @@ import LeadDrawer from '../components/LeadDrawer.jsx';
 import LeadTable from '../components/LeadTable.jsx';
 import Pagination from '../components/Pagination.jsx';
 import StatCards from '../components/StatCards.jsx';
+import Campaigns from './Campaigns.jsx';
 import SuppressDialog from '../components/SuppressDialog.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
@@ -24,6 +25,7 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [tab, setTab] = useState('leads');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,8 +87,20 @@ export default function Dashboard() {
             <button onClick={logout} className="text-slate-500 hover:text-slate-900">Sign out</button>
           </div>
         </div>
+        {can('runs:read') && (
+          <nav className="mx-auto flex max-w-7xl gap-6 px-4 text-sm sm:px-6">
+            {[['leads', 'Leads'], ['campaigns', 'Campaigns (AI agents)']].map(([key, label]) => (
+              <button key={key} onClick={() => setTab(key)}
+                className={`border-b-2 pb-2 font-medium ${tab === key
+                  ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+                {label}
+              </button>
+            ))}
+          </nav>
+        )}
       </header>
 
+      {tab === 'campaigns' ? <Campaigns onLeadsChanged={load} /> : (
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
         <StatCards stats={stats} />
 
@@ -124,6 +138,7 @@ export default function Dashboard() {
             onPage={(page) => setFilters((f) => ({ ...f, page }))} />
         </section>
       </main>
+      )}
 
       {selected && (
         <LeadDrawer lead={selected} users={users} onClose={() => setSelected(null)}

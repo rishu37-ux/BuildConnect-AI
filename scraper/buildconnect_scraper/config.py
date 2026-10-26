@@ -16,6 +16,13 @@ class Settings:
     timeout: float = 20.0
     max_retries: int = 3
     respect_robots: bool = True
+    # Campaign worker
+    search_provider: str = "brave"
+    search_api_key: str = ""
+    search_file: str | None = None
+    crawler_agents: int = 3
+    poll_interval: float = 10.0
+    recrawl_after_days: int = 30
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -30,4 +37,10 @@ class Settings:
             timeout=float(env("BC_TIMEOUT", cls.timeout)),
             max_retries=int(env("BC_MAX_RETRIES", cls.max_retries)),
             respect_robots=env("BC_RESPECT_ROBOTS", "true").lower() != "false",
+            search_provider=env("BC_SEARCH_PROVIDER", cls.search_provider),
+            search_api_key=env("BC_SEARCH_API_KEY", ""),
+            search_file=env("BC_SEARCH_FILE") or None,
+            crawler_agents=int(env("BC_CRAWLER_AGENTS", cls.crawler_agents)),
+            poll_interval=float(env("BC_POLL_INTERVAL", cls.poll_interval)),
+            recrawl_after_days=int(env("BC_RECRAWL_AFTER_DAYS", cls.recrawl_after_days)),
         )

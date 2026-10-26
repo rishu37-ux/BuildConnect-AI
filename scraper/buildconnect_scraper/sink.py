@@ -22,7 +22,8 @@ class LeadSink(Protocol):
 
 
 class ApiSink:
-    def __init__(self, settings: Settings, batch_size: int = 100, client: httpx.AsyncClient | None = None):
+    def __init__(self, settings: Settings, batch_size: int = 100, client: httpx.AsyncClient | None = None,
+                 campaign_id: int | None = None):
         if not settings.ingest_api_key:
             raise ValueError("BC_INGEST_API_KEY is required to push leads to the API")
         self._client = client or httpx.AsyncClient(
@@ -32,10 +33,14 @@ class ApiSink:
         self._batch: list[Lead] = []
         self._batch_size = batch_size
         self.run_id: int | None = None
+        self.campaign_id = campaign_id
         self.totals = {"inserted": 0, "merged": 0, "suppressed": 0, "invalid": 0}
 
     async def start(self, agent_name: str, target: dict) -> None:
-        resp = await self._client.post("ingest/runs", json={"agent_name": agent_name, "target": target})
+        body = {"agent_name": agent_name, "target": target}
+        if self.campaign_id:
+            body["campaign_id"] = self.campaign_id
+        resp = await self._client.post("ingest/runs", json=body)
         resp.raise_for_status()
         self.run_id = resp.json()["id"]
 
@@ -45,17 +50,18 @@ class ApiSink:
             await self.flush()
 
     async def flush(self) -> None:
-        if not self._batch:
+        # Swap the buffer out first: several crawler agents may add leads while we await.
+        batch, self._batch = self._batch, []
+        if not batch:
             return
-        payload = {"leads": [lead.to_payload() for lead in self._batch]}
+        payload = {"leads": [lead.to_payload() for lead in batch]}
         if self.run_id:
             payload["run_id"] = self.run_id
         resp = await self._client.post("ingest/leads", json=payload)
         resp.raise_for_status()
         for k, v in resp.json().items():
             self.totals[k] = self.totals.get(k, 0) + v
-        log.info("pushed %d leads: %s", len(self._batch), resp.json())
-        self._batch.clear()
+        log.info("pushed %d leads: %s", len(batch), resp.json())
 
     async def finish(self, pages_fetched: int, leads_found: int, stats: dict) -> None:
         await self.flush()

@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { pool } from './db/pool.js';
 import { errorHandler, notFound } from './middleware/errors.js';
 import authRoutes from './routes/auth.js';
+import campaignRoutes from './routes/campaigns.js';
 import { ingestRouter, runsRouter } from './routes/ingest.js';
 import leadRoutes from './routes/leads.js';
 import suppressionRoutes from './routes/suppression.js';
@@ -32,6 +33,7 @@ export function createApp() {
   app.use('/api/users', userRoutes);
   app.use('/api/leads', leadRoutes);
   app.use('/api/runs', runsRouter);
+  app.use('/api/campaigns', campaignRoutes);
   app.use('/api/suppression', suppressionRoutes);
   app.use('/api/ingest', ingestRouter);
 

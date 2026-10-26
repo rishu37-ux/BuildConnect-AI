@@ -19,11 +19,43 @@ Agentic lead discovery and management for the construction sector:
 | `frontend/` | React 18 + Vite + Tailwind CSS v4 dashboard: stats, filters, search, lead detail/edit drawer, assignment, CSV export, opt-out requests |
 | `docs/COMPLIANCE.md` | Data protection controls (DPDP Act 2023), source selection, and why CAPTCHAs are not bypassed |
 
+## Autonomous campaigns (multi-agent)
+
+Start a campaign from **Dashboard → Campaigns (AI agents)**: pick professions,
+states and optionally cities, then click **Start agents**. The always-on
+`worker` service picks it up and runs a team of agents:
+
+```
+CampaignOrchestrator (scraper/buildconnect_scraper/campaign.py)
+ ├─ DiscoveryAgent  – plans searches ("structural engineer in Mohali", …), queries a
+ │                    search API, drops aggregators/social/listicles/other regions,
+ │                    ranks sites, stops early when searches stop finding new sites
+ └─ N × LeadAgent   – one website each, in parallel (BC_CRAWLER_AGENTS, default 3),
+                      sharing the proxy pool, rate limiter and lead sink
+```
+
+The dashboard shows live progress (searches, websites found/visited, pages, contacts,
+new leads), the list of websites with each one's result, and a **Stop** button.
+Websites crawled in the last `BC_RECRAWL_AFTER_DAYS` (30) are skipped by later campaigns.
+
+**Setup:** the discovery agent needs a web search API key in `.env`:
+
+```
+BC_SEARCH_PROVIDER=brave          # or serpapi
+BC_SEARCH_API_KEY=your-key        # https://brave.com/search/api/  or  https://serpapi.com/
+```
+
+Preview what discovery would find without crawling anything:
+
+```bash
+docker compose run --rm scraper discover --profession architect --city Ludhiana --limit 20
+```
+
 ## Quick start
 
 ```bash
 cp .env.example .env          # then change the secrets
-docker compose up -d db backend frontend
+docker compose up -d --build db backend frontend worker
 docker compose exec backend node src/db/seed.js   # create the admin user from SEED_ADMIN_*
 open http://localhost:5173
 ```
@@ -96,6 +128,10 @@ ingest routes take `x-api-key: $INGEST_API_KEY`.
 | GET / PATCH / DELETE | `/leads/:id` | `leads:read` / `leads:write` (or `leads:write:own`) / `leads:delete` |
 | GET / POST / PATCH | `/users`, `/users/:id` | `users:manage` (list also `leads:assign`) |
 | POST | `/suppression` | `suppression:manage` |
+| GET / POST | `/campaigns` | `runs:read` / `campaigns:manage` |
+| GET | `/campaigns/:id/sources` | `runs:read` |
+| POST | `/campaigns/:id/cancel` | `campaigns:manage` |
+| POST / PATCH | `/ingest/campaigns/claim`, `/ingest/campaigns/:id`, `/ingest/campaigns/:id/sources`, `/ingest/sources/:id` | ingest key (worker) |
 | GET | `/runs` | `runs:read` |
 | POST / PATCH | `/ingest/runs`, `/ingest/runs/:id` | ingest key |
 | POST | `/ingest/leads` | ingest key |
@@ -106,7 +142,7 @@ ingest routes take `x-api-key: $INGEST_API_KEY`.
 |---|:-:|:-:|:-:|:-:|
 | View leads | ✓ | ✓ | ✓ | ✓ |
 | Edit leads | ✓ | ✓ | own assigned only | |
-| Assign leads, export CSV, opt-outs, view runs | ✓ | ✓ | | |
+| Assign leads, export CSV, opt-outs, run & stop campaigns | ✓ | ✓ | | |
 | Delete leads, manage users, audit log | ✓ | | | |
 
 ## Tests
@@ -130,6 +166,9 @@ backend/
   src/services/    leadService (dedupe/merge/filter/export), audit
   src/utils/       contact normalisation, CSV
 scraper/buildconnect_scraper/
+  campaign.py      CampaignOrchestrator + worker loop (multi-agent campaigns)
+  discovery.py     DiscoveryAgent: query planning, result filtering & ranking
+  search.py        Brave / SerpAPI / static search providers
   agent.py         LeadAgent: frontier, link scoring, adaptive domain/path learning
   fetcher.py       retries, proxy rotation, challenge detection
   proxy.py         health-aware ProxyPool
@@ -139,7 +178,7 @@ scraper/buildconnect_scraper/
   sink.py          API sink (batched) and JSONL dry-run sink
   cli.py           command-line entry point
 frontend/src/
-  pages/           Login, Dashboard
+  pages/           Login, Dashboard, Campaigns
   components/      StatCards, Filters, LeadTable, LeadDrawer, Pagination, SuppressDialog
   lib/             api client, auth context, labels
 ```
